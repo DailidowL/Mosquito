@@ -654,11 +654,11 @@ try {
     # --- Rolle waehlen ---
     if (-not $Role) {
         Write-Host ''
-        Write-Host '  Welche Karte soll erstellt werden?'
+        Write-Host '  Was soll eingerichtet werden?'
         Write-Host ''
-        Write-Host "  [1] Broker  - Raspberry Pi OS Lite, Mosquitto, $($Config.BrokerIP)"
-        Write-Host "  [2] Client  - Ubuntu Server 24.04,  MQTT-Client, $($Config.ClientIP)"
-        Write-Host "  [3] Laptop  - diesen Rechner fuer den Switch-Betrieb vorbereiten"
+        Write-Host '  [1] Broker  - neue SD-Karte fuer brokerpi erstellen'
+        Write-Host '  [2] Client  - neue SD-Karte fuer clientpi erstellen'
+        Write-Host '  [3] Laptop  - diesem Laptop eine Zusatzadresse fuer den Switch geben (keine SD-Karte)'
         Write-Host ''
         $sel = Read-Host '  Auswahl (1, 2 oder 3)'
         switch ($sel) {
@@ -669,8 +669,42 @@ try {
         }
     }
 
+    # --- Vorher genau anzeigen, was veraendert wird ---
+    Write-Step 'Das wird veraendert'
+    $plan = switch ($Role) {
+        'broker' {
+            if ($SkipFlash) { 'Auf der eingesteckten Karte werden nur die Einstellungsdateien ersetzt. Nichts wird geloescht.' }
+            else { 'Die SD-Karte, die du gleich auswaehlst, wird komplett geloescht.' }
+            "Darauf kommt Raspberry Pi OS mit dem MQTT-Broker (Name $($Config.BrokerName), Adresse $($Config.BrokerIP))."
+            'Am Laptop wird nichts veraendert.'
+        }
+        'client' {
+            if ($SkipFlash) { 'Auf der eingesteckten Karte werden nur die Einstellungsdateien ersetzt. Nichts wird geloescht.' }
+            else { 'Die SD-Karte, die du gleich auswaehlst, wird komplett geloescht.' }
+            "Darauf kommt Ubuntu Server mit dem MQTT-Client (Name $($Config.ClientName), Adresse $($Config.ClientIP))."
+            'Am Laptop wird nichts veraendert.'
+        }
+        'laptop' {
+            if ($RemoveLaptopAddress) {
+                "Die Zusatzadresse $($Config.LaptopIP) wird vom Netzwerkanschluss entfernt."
+                'Sonst wird nichts veraendert.'
+            }
+            else {
+                "Der Netzwerkanschluss zum Switch bekommt zusaetzlich die Adresse $($Config.LaptopIP)."
+                'Die bisherige automatische Adresse bleibt, Internet funktioniert weiter wie bisher.'
+                'Es wird nichts geloescht und keine SD-Karte beschrieben.'
+                'Rueckgaengig: Skript mit -Role laptop -RemoveLaptopAddress starten.'
+            }
+        }
+    }
+    $plan | ForEach-Object { Write-Host "    - $_" }
+    Write-Host ''
+
     # --- Laptop: nur Netzwerk, keine SD-Karte ---
     if ($Role -eq 'laptop') {
+        $confirm = Read-Host '  Fortfahren? (ja/nein)'
+        if ($confirm -notin @('ja', 'j', 'yes', 'y')) { throw 'Abgebrochen. Es wurde nichts veraendert.' }
+
         Set-LaptopAddress -Remove:$RemoveLaptopAddress
 
         if ($RemoveLaptopAddress) {
