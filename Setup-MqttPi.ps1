@@ -76,7 +76,7 @@ $Config = @{
 # laden und mit -ImagePath uebergeben.
 $ImageUrls = @{
     broker = 'https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2025-11-24/2025-11-24-raspios-trixie-arm64-lite.img.xz'
-    client = 'https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.3-preinstalled-server-arm64+raspi.img.xz'
+    client = 'https://cdimage.ubuntu.com/releases/24.04/release/ubuntu-24.04.5-preinstalled-server-arm64+raspi.img.xz'
 }
 
 $BootLabels = @{
@@ -167,7 +167,7 @@ function Select-TargetDisk {
     if ([string]::IsNullOrWhiteSpace($choice)) { throw 'Abgebrochen.' }
 
     $idx = 0
-    if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 1 -or $idx -gt $disks.Count) {
+    if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 1 -or $idx -gt @($disks).Count) {
         throw "Ungueltige Auswahl: $choice"
     }
 
@@ -205,7 +205,9 @@ function Get-ImageFile {
     Write-Host '    Das kann je nach Verbindung einige Minuten dauern.'
 
     try {
-        $ProgressPreference = 'Continue'
+        # Fortschrittsanzeige aus: Mit Anzeige ist Invoke-WebRequest in
+        # Windows PowerShell 5.1 bei grossen Dateien um ein Vielfaches langsamer.
+        $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $url -OutFile $target -UseBasicParsing
     }
     catch {
@@ -291,6 +293,12 @@ function Wait-BootPartition {
 #  KONFIGURATIONSDATEIEN
 # ============================================================================
 
+#
+#  WICHTIG: Die folgenden Texte sind PowerShell-Here-Strings (@" ... "@). Darin wird
+#  jedes $ als PowerShell-Variable ausgewertet. Ein $, das als $ in der Linux-Datei
+#  landen soll, muss mit Backtick geschrieben werden: `$
+#  Ein Backslash \$ wirkt in PowerShell NICHT als Escape.
+
 function Get-BrokerUserData {
     $ip = $Config.BrokerIP
     return @"
@@ -359,20 +367,20 @@ write_files:
     content: |
       #!/bin/sh
       . /etc/mqtt.env
-      if [ \$# -ge 2 ]; then SUB="\$1"; shift; else SUB="\$(hostname)"; fi
-      [ \$# -eq 0 ] && { echo 'Benutzung: send "Nachricht"  oder  send thema "Nachricht"'; exit 1; }
+      if [ `$# -ge 2 ]; then SUB="`$1"; shift; else SUB="`$(hostname)"; fi
+      [ `$# -eq 0 ] && { echo 'Benutzung: send "Nachricht"  oder  send thema "Nachricht"'; exit 1; }
       exec docker exec mosquitto mosquitto_pub -h localhost \
-        -u "\$MQTT_USER" -P "\$MQTT_PASS" -q 1 -t "\$TOPIC/\$SUB" -m "\$*"
+        -u "`$MQTT_USER" -P "`$MQTT_PASS" -q 1 -t "`$TOPIC/`$SUB" -m "`$*"
 
   - path: /usr/local/bin/listen
     permissions: '0755'
     content: |
       #!/bin/sh
       . /etc/mqtt.env
-      SUB="\${1:-#}"
-      echo "Empfange \$TOPIC/\$SUB  (Strg+C beendet)"
+      SUB="`${1:-#}"
+      echo "Empfange `$TOPIC/`$SUB  (Strg+C beendet)"
       exec docker exec -it mosquitto mosquitto_sub -h localhost \
-        -u "\$MQTT_USER" -P "\$MQTT_PASS" -q 1 -v -t "\$TOPIC/\$SUB"
+        -u "`$MQTT_USER" -P "`$MQTT_PASS" -q 1 -v -t "`$TOPIC/`$SUB"
 
   - path: /usr/local/bin/mqtt-status
     permissions: '0755'
@@ -396,7 +404,7 @@ runcmd:
   - [ systemctl, enable, --now, avahi-daemon ]
   - [ sh, -c, 'echo "Broker bereit auf $ip und per DHCP" > /etc/motd' ]
 
-final_message: "Broker fertig eingerichtet nach \$UPTIME Sekunden."
+final_message: "Broker fertig eingerichtet nach `$UPTIME Sekunden."
 "@
 }
 
@@ -437,22 +445,22 @@ write_files:
     content: |
       #!/bin/sh
       . /etc/mqtt.env
-      if [ \$# -ge 2 ]; then SUB="\$1"; shift; else SUB="\$(hostname)"; fi
-      [ \$# -eq 0 ] && { echo 'Benutzung: send "Nachricht"  oder  send thema "Nachricht"'; exit 1; }
+      if [ `$# -ge 2 ]; then SUB="`$1"; shift; else SUB="`$(hostname)"; fi
+      [ `$# -eq 0 ] && { echo 'Benutzung: send "Nachricht"  oder  send thema "Nachricht"'; exit 1; }
       exec docker run --rm --network host eclipse-mosquitto:2 mosquitto_pub \
-        -h "\$BROKER" -p 1883 -u "\$MQTT_USER" -P "\$MQTT_PASS" \
-        -q 1 -t "\$TOPIC/\$SUB" -m "\$*"
+        -h "`$BROKER" -p 1883 -u "`$MQTT_USER" -P "`$MQTT_PASS" \
+        -q 1 -t "`$TOPIC/`$SUB" -m "`$*"
 
   - path: /usr/local/bin/listen
     permissions: '0755'
     content: |
       #!/bin/sh
       . /etc/mqtt.env
-      SUB="\${1:-#}"
-      echo "Empfange \$TOPIC/\$SUB von \$BROKER  (Strg+C beendet)"
+      SUB="`${1:-#}"
+      echo "Empfange `$TOPIC/`$SUB von `$BROKER  (Strg+C beendet)"
       exec docker run --rm -it --network host eclipse-mosquitto:2 mosquitto_sub \
-        -h "\$BROKER" -p 1883 -u "\$MQTT_USER" -P "\$MQTT_PASS" \
-        -q 1 -v -t "\$TOPIC/\$SUB"
+        -h "`$BROKER" -p 1883 -u "`$MQTT_USER" -P "`$MQTT_PASS" \
+        -q 1 -v -t "`$TOPIC/`$SUB"
 
   - path: /usr/local/bin/mqtt-status
     permissions: '0755'
@@ -462,8 +470,8 @@ write_files:
       echo "=== Adressen ==="
       hostname -I
       echo
-      echo "=== Broker \$BROKER erreichbar? ==="
-      ping -c 2 -W 2 "\$BROKER" > /dev/null 2>&1 && echo "ja" || echo "NEIN"
+      echo "=== Broker `$BROKER erreichbar? ==="
+      ping -c 2 -W 2 "`$BROKER" > /dev/null 2>&1 && echo "ja" || echo "NEIN"
       echo
       echo "=== Mosquitto-Image vorhanden? ==="
       docker image ls eclipse-mosquitto:2 --format '{{.Repository}}:{{.Tag}}  {{.Size}}'
@@ -474,7 +482,7 @@ runcmd:
   - [ docker, pull, 'eclipse-mosquitto:2' ]
   - [ sh, -c, 'echo "Client bereit. Broker: $($Config.BrokerIP)" > /etc/motd' ]
 
-final_message: "Client fertig eingerichtet nach \$UPTIME Sekunden."
+final_message: "Client fertig eingerichtet nach `$UPTIME Sekunden."
 "@
 }
 
@@ -571,12 +579,37 @@ function Set-LaptopAddress {
             Remove-NetIPAddress -InterfaceIndex $adapter.ifIndex `
                                 -IPAddress $Config.LaptopIP -Confirm:$false
             Write-Ok "Adresse $($Config.LaptopIP) entfernt."
+            $iface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4
+            if ($iface.Dhcp -ne 'Enabled') {
+                Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Dhcp Enabled
+                Write-Ok 'DHCP wieder eingeschaltet.'
+            }
         }
         else {
             Write-Warn "Adresse $($Config.LaptopIP) war nicht gesetzt."
         }
         return
     }
+
+    # Reihenfolge ist wichtig:
+    # 1. DHCP einschalten, falls aus. Das Einschalten loescht vorhandene feste Adressen,
+    #    deshalb muss es VOR dem Hinzufuegen passieren.
+    # 2. Koexistenz von DHCP und fester Adresse erlauben. Ohne diese Einstellung schaltet
+    #    New-NetIPAddress DHCP automatisch ab.
+    # 3. Feste Adresse hinzufuegen.
+    $iface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4
+    if ($iface.Dhcp -ne 'Enabled') {
+        Write-Warn 'DHCP war abgeschaltet und wird eingeschaltet.'
+        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Dhcp Enabled
+        Start-Sleep -Seconds 3
+        $existing = $null
+    }
+
+    $null = & netsh interface ipv4 set interface interface="$($adapter.ifIndex)" dhcpstaticipcoexistence=enabled
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Dieses Windows erlaubt DHCP und feste Adresse nicht gleichzeitig. Bitte die Adresse von Hand setzen (siehe Technische Doku).'
+    }
+    Write-Ok 'DHCP und feste Adresse duerfen gleichzeitig bestehen.'
 
     if ($existing) {
         Write-Ok "Adresse $($Config.LaptopIP) ist bereits gesetzt."
@@ -589,14 +622,14 @@ function Set-LaptopAddress {
         Write-Ok "Adresse $($Config.LaptopIP)/$($Config.Netmask) hinzugefuegt."
     }
 
-    # DHCP muss aktiv bleiben, damit der Laptop am Router weiterhin funktioniert
+    # Kontrolle: DHCP muss weiterhin aktiv sein
     $iface = Get-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4
-    if ($iface.Dhcp -ne 'Enabled') {
-        Write-Warn 'DHCP war abgeschaltet und wird wieder eingeschaltet.'
-        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -Dhcp Enabled
+    if ($iface.Dhcp -eq 'Enabled') {
+        Write-Ok 'DHCP bleibt aktiv.'
     }
     else {
-        Write-Ok 'DHCP bleibt aktiv.'
+        Write-Warn 'DHCP wurde abgeschaltet. Am Switch funktioniert alles, am Router hat der Laptop so kein Internet.'
+        Write-Warn "Rueckgaengig: .\Setup-MqttPi.ps1 -Role laptop -RemoveLaptopAddress"
     }
 
     Write-Host ''
@@ -732,14 +765,15 @@ try {
     Write-Host '  2. Netzwerkkabel an den Router (Internet wird fuer die Installation gebraucht)'
     Write-Host '  3. Strom anschliessen, danach 5 bis 15 Minuten warten'
     Write-Host ''
-    Write-Host "  4. Pruefen:  ssh $($Config.LinuxUser)@$ipAddr     Passwort: $($Config.LinuxPass)"
-    Write-Host '               mqtt-status'
+    Write-Host "  4. Pruefen am Router:  ssh $($Config.LinuxUser)@$hostName.local     Passwort: $($Config.LinuxPass)"
+    Write-Host "     Pruefen am Switch:  ssh $($Config.LinuxUser)@$ipAddr"
+    Write-Host '     Danach auf dem Pi:  mqtt-status'
     Write-Host ''
     if ($Role -eq 'broker') {
         Write-Host '  Danach die zweite Karte erstellen:  .\Setup-MqttPi.ps1 -Role client'
     }
     else {
-        Write-Host '  Test:  auf brokerpi "listen", auf clientpi "send \"Hallo\""'
+        Write-Host '  Test:  auf brokerpi  listen  eingeben, auf clientpi  send "Hallo"'
     }
     Write-Host ''
 }
